@@ -1,0 +1,6 @@
+# Satellite/date outlines that must never be published (e.g. false positives
+# rejected at review). One per line: <YYYY-MM-DD> <Satelite>
+# Satelite is one of: Landsat, Sentinel2, PlanetScope
+# Matching source files are still archived, just not added to the layer.
+# Example:
+# 2026-02-01 Sentinel2

@@ -1,0 +1,36 @@
+[project]
+name = "akk-turbidity"
+version = "0.1.0"
+description = "Satellite turbidity event outlines for the Akoakoa geoportal (GEE monitor + GeoJSON ingest)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "earthengine-api>=1.4",
+    "google-auth>=2.33",
+    "google-cloud-storage>=2.18",
+    "planet>=2.10,<3",
+    "requests>=2.32",
+    "numpy>=2.0",
+    "fiona>=1.10",
+    "shapely>=2.0",
+    "pyproj>=3.6",
+]
+
+[project.scripts]
+akk-monitor = "akk_turbidity.run_monitor:main"
+akk-ingest = "akk_turbidity.ingest.cli:main"
+akk-auth-check = "akk_turbidity.auth:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/akk_turbidity"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

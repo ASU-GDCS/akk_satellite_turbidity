@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "akoakoa_extent",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": "00000000000000000000", "areaacres": 232455.97, "areasqkm": 940.72, "fid": 65, "globalid": "{E9C379FC-FD70-4230-9663-3BA4E4C1E4C1}", "huc12": "200100001700", "humod": "NM", "hutype": "W", "hutype_des": "Water", "loaddate": "2016-10-18T01:00:38", "metasource": "{5203501E-5C13-4C0A-8D3E-071C48E63C56}", "name": "Honuapo Bay-Pacific Ocean", "noncontr_1": "", "noncontrib": "", "objectid": 56601, "referenceg": "", "shape_Area": 0.080790581806801001, "shape_Leng": 3.5159111557013789, "sourcedata": "", "sourcefeat": "", "sourceorig": "", "states": "HI", "tnmid": "{2C3AAACC-98F4-420B-8DEC-FA6F7E0E6A39}", "tohuc": "OCEAN" }, "geometry": { "type": "Polygon", "coordinates": [ [ [ -156.080500642653533, 18.895186570713424 ], [ -155.681629597378645, 18.895186570713424 ], [ -155.681629597378645, 20.286452803108467 ], [ -156.080500642653533, 20.286452803108467 ], [ -156.080500642653533, 18.895186570713424 ] ] ] } }
+]
+}

@@ -1,0 +1,216 @@
+version: 2.1
+
+# One config file drives everything; the `run` pipeline parameter picks what runs.
+#
+#   checks       default, every push/PR   secret scan + tests (no context, no secrets)
+#   gee-monitor  schedule, Mondays        Earth Engine processing -> GCS vector/raster exports
+#   ingest       schedule, Wednesdays     prepare -> APPROVAL -> commit layer -> archive sources
+#   auth-check   manual                   verify keyless access to Earth Engine and the bucket
+#
+# The two schedules (and manual runs) are set up in the CircleCI UI; see README.
+# Secrets live only in the restricted "akk-turbidity" context, never in this repo.
+
+parameters:
+  run:
+    type: enum
+    enum: [checks, gee-monitor, ingest, auth-check]
+    default: checks
+
+executors:
+  python:
+    docker:
+      - image: cimg/python:3.12
+    resource_class: small
+    environment:
+      UV_VERSION: "0.12.19"
+      UV_PYTHON_DOWNLOADS: never   # use the image's Python 3.12
+      UV_NO_PROGRESS: "1"
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
+commands:
+  setup-env:
+    description: Install uv and the locked project environment
+    steps:
+      - restore_cache:
+          keys:
+            - uv-v1-{{ arch }}-{{ checksum "uv.lock" }}
+      - run:
+          name: Install uv + dependencies
+          command: |
+            curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+            echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${BASH_ENV}"
+            export PATH="${HOME}/.local/bin:${PATH}"
+            uv sync --frozen
+      - save_cache:
+          key: uv-v1-{{ arch }}-{{ checksum "uv.lock" }}
+          paths:
+            - ~/.cache/uv
+
+  gcp-login:
+    description: Keyless Google credentials via CircleCI OIDC + Workload Identity Federation
+    parameters:
+      service_account_env:
+        type: string
+    steps:
+      - run:
+          name: Google credentials (<< parameters.service_account_env >>)
+          command: ci/gcp_wif_login.sh << parameters.service_account_env >>
+
+jobs:
+  checks:
+    executor: python
+    steps:
+      - checkout
+      - run:
+          name: Secret scan (gitleaks, full history)
+          command: |
+            tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+            curl -fsSL -o "/tmp/${tarball}" \
+              "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+            echo "${GITLEAKS_SHA256}  /tmp/${tarball}" | sha256sum -c -
+            tar -xzf "/tmp/${tarball}" -C /tmp gitleaks
+            /tmp/gitleaks git --redact --no-banner --config .gitleaks.toml .
+      - setup-env
+      - run:
+          name: Tests
+          command: uv run pytest -q
+
+  auth-check:
+    executor: python
+    steps:
+      - checkout
+      - setup-env
+      - gcp-login:
+          service_account_env: GEE_SERVICE_ACCOUNT
+      - run:
+          name: Earth Engine + bucket as the GEE service account
+          command: uv run akk-auth-check --ee --gcs
+      - gcp-login:
+          service_account_env: INGEST_SERVICE_ACCOUNT
+      - run:
+          name: Bucket as the ingest service account
+          command: uv run akk-auth-check --gcs
+
+  gee-monitor:
+    executor: python
+    parameters:
+      satellite:
+        type: string
+      nodes:
+        type: integer
+        default: 1
+    parallelism: << parameters.nodes >>
+    steps:
+      - checkout
+      - setup-env
+      - gcp-login:
+          service_account_env: GEE_SERVICE_ACCOUNT
+      - run:
+          name: Process pending << parameters.satellite >> days (this node's share)
+          # Planet orders can sit silently while Planet delivers to Earth Engine
+          no_output_timeout: 30m
+          command: uv run akk-monitor --satellite << parameters.satellite >>
+
+  prepare-outlines:
+    executor: python
+    steps:
+      - checkout
+      - setup-env
+      - gcp-login:
+          service_account_env: INGEST_SERVICE_ACCOUNT
+      - run:
+          name: Collect new outlines and build candidate layer
+          command: uv run akk-ingest prepare --out build/ingest
+      - run:
+          name: Review summary (also in the Artifacts tab, with map.html)
+          command: cat build/ingest/review/summary.md
+      - store_artifacts:
+          path: build/ingest/review
+          destination: review
+      - store_artifacts:
+          path: build/ingest/manifest.json
+          destination: review/manifest.json
+      - persist_to_workspace:
+          root: .
+          paths:
+            - build/ingest/manifest.json
+            - build/ingest/turbidity_outlines.geojson
+
+  publish-outlines:
+    executor: python
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - setup-env
+      # Installs the repo's write deploy key (Project Settings > SSH Keys)
+      - add_ssh_keys
+      - run:
+          name: Commit reviewed layer to main
+          command: ci/push_layer.sh
+
+  archive-ingested:
+    executor: python
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - setup-env
+      - gcp-login:
+          service_account_env: INGEST_SERVICE_ACCOUNT
+      - run:
+          name: Gzip + move ingested source files to the archive prefix
+          command: uv run akk-ingest archive --out build/ingest
+
+workflows:
+  checks:
+    when:
+      equal: [checks, << pipeline.parameters.run >>]
+    jobs:
+      - checks
+
+  auth-check:
+    when:
+      equal: [auth-check, << pipeline.parameters.run >>]
+    jobs:
+      - auth-check:
+          context: akk-turbidity
+
+  gee-monitor:
+    when:
+      equal: [gee-monitor, << pipeline.parameters.run >>]
+    jobs:
+      - gee-monitor:
+          name: gee-landsat
+          satellite: landsat
+          nodes: 1
+          context: akk-turbidity
+      - gee-monitor:
+          name: gee-sentinel2
+          satellite: sentinel2
+          nodes: 2
+          context: akk-turbidity
+      - gee-monitor:
+          name: gee-planet
+          satellite: planet
+          nodes: 7
+          context: akk-turbidity
+
+  ingest:
+    when:
+      equal: [ingest, << pipeline.parameters.run >>]
+    jobs:
+      - prepare-outlines:
+          context: akk-turbidity
+      - hold-for-review:
+          type: approval
+          requires: [prepare-outlines]
+      # The context on the jobs after the approval means only people allowed to
+      # use the context can effectively approve.
+      - publish-outlines:
+          context: akk-turbidity
+          requires: [hold-for-review]
+      - archive-ingested:
+          context: akk-turbidity
+          requires: [publish-outlines]

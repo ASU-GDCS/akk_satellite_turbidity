@@ -1,0 +1,59 @@
+# Non-secret pipeline configuration. Credentials never go here: see README "Secrets".
+# Relative paths are resolved against the repository root.
+
+[gee]
+# Cloud project that owns the Earth Engine assets and is billed for EE compute.
+project = "akoakoa-turbidity"
+assets_root = "projects/akoakoa-turbidity/assets"
+aoi = "projects/akoakoa-turbidity/assets/aoi/akoakoa_turbidity_roi"
+depth = "projects/akoakoa-turbidity/assets/blended_depth_3m"
+
+[gcs]
+bucket = "hawaii-bucket"
+# Per-day "done" markers written by the monitor: <state_prefix>/<satellite>/<YYYY-MM-DD>.json
+state_prefix = "TurbidityTest/state"
+# Ingested vector GeoJSONs are gzipped into <archive_prefix>/<satellite>/<YYYY>/vector/
+archive_prefix = "TurbidityTest/archive"
+
+[monitor]
+# Only days newer than max(processed_through, today - lookback_days) are considered.
+lookback_days = 30
+# A node stops starting new days after this many minutes (CircleCI Free caps jobs at 60).
+time_budget_minutes = 40
+
+# Per-satellite settings.
+#   prefix            GCS prefix the GEE exports go to (<prefix><YYYY>/{vector,raster}/<date>...)
+#   label             "Satelite" value written into the published layer
+#   lag_days          newest day processed is today(UTC) - lag_days (imagery latency)
+#   processed_through last day processed by the old systemd service; never reprocessed
+# How many CircleCI nodes each satellite uses is set in .circleci/config.yml (parallelism).
+
+[satellites.landsat]
+label = "Landsat"
+prefix = "TurbidityTest/landsat/"
+baselines = "projects/akoakoa-turbidity/assets/imagery/landsat/baselines"
+lag_days = 8
+processed_through = "2026-09-20"
+
+[satellites.sentinel2]
+label = "Sentinel2"
+prefix = "TurbidityTest/sentinel2/"
+baselines = "projects/akoakoa-turbidity/assets/imagery/sentinel-2/baselines"
+lag_days = 5
+processed_through = "2026-09-23"
+
+[satellites.planet]
+label = "PlanetScope"
+prefix = "TurbidityTest/planet/"
+baselines = "projects/akoakoa-turbidity/assets/imagery/planet/2023_baseline"
+# Planet orders are delivered straight into this GEE collection (under assets_root), one per day.
+daily_collection = "imagery/planet/daily_test_17May"
+# Local copy of the AOI used for the Planet search/clip.
+local_aoi = "config/WBDHU12_WestHawaii_simple.geojson"
+lag_days = 1
+processed_through = "2026-09-24"
+
+[ingest]
+# The published layer (AGOL reads this file's raw GitHub URL).
+layer = "data/turbidity_outlines.geojson"
+layer_name = "turbidity_outlines"

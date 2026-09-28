@@ -1,0 +1,27 @@
+# gitleaks config: default rules plus patterns for credentials this project
+# has actually leaked before (Planet keys, base64-encoded GCP service-account
+# JSON). Run locally with `gitleaks git .` or via pre-commit; CI runs it on
+# every push.
+title = "akk_satellite_turbidity"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "planet-api-key"
+description = "Planet Labs API key"
+regex = '''PLAK[0-9a-fA-F]{32}'''
+keywords = ["plak"]
+
+[[rules]]
+id = "gcp-service-account-base64"
+description = "Base64-encoded GCP service account JSON"
+# base64 of "service_account" at each of the three byte alignments
+regex = '''(c2VydmljZV9hY2NvdW50|NlcnZpY2VfYWNjb3VudC|zZXJ2aWNlX2FjY291bnQ)'''
+keywords = ["c2vydmljzv9hy2nvdw50", "nlcnzpy2vfywnjb3vudc", "zxj2awnlx2fjy291bnq"]
+
+[[rules]]
+id = "gcp-service-account-json"
+description = "GCP service account key JSON"
+regex = '''"private_key_id"\s*:\s*"[0-9a-f]{40}"'''
+keywords = ["private_key_id"]

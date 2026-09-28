@@ -1,0 +1,25 @@
+# --- credentials: never commit ---------------------------------------------
+*.key
+*.pem
+*.p12
+.env
+.env.*
+*credential*.json
+*-key.json
+*_access.json
+gcs_*.json
+service_account*.json
+application_default_credentials.json
+
+# --- local / build ------------------------------------------------------------
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+logs/
+downloads/
+.ipynb_checkpoints/
+*.ipynb
+.vscode/
+.idea/
