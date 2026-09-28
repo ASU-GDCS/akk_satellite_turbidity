@@ -4,6 +4,7 @@
 *.p12
 .env
 .env.*
+.envrc
 *credential*.json
 *-key.json
 *_access.json

@@ -198,7 +198,7 @@ CIRCLECI_ORG_ID=<organization id>          # CircleCI Organization Settings > Ov
 CIRCLECI_PROJECT_ID=<project id>           # CircleCI Project Settings > Overview
 POOL=circleci
 PROVIDER=circleci-akk
-GEE_SA=<existing Earth Engine service account email>
+GEE_SA=akoakoa-turbidity@${PROJECT_ID}.iam.gserviceaccount.com   # existing Earth Engine service account
 INGEST_SA=turbidity-ingest@${PROJECT_ID}.iam.gserviceaccount.com
 BUCKET=hawaii-bucket
 
@@ -236,15 +236,23 @@ state markers.
 If the bucket uses uniform bucket-level access, limit the grant to the prefix:
 
 ```bash
-COND='expression=resource.name.startsWith("projects/_/buckets/'"$BUCKET"'/objects/TurbidityTest/") || api.getAttribute("storage.googleapis.com/objectListPrefix", "").startsWith("TurbidityTest/"),title=TurbidityTest-only'
+# --condition splits on commas, so the expression goes in a file
+cat > /tmp/turbidity-cond.yaml <<EOF
+title: TurbidityTest-only
+description: Only objects under TurbidityTest/
+expression: 'resource.name.startsWith("projects/_/buckets/${BUCKET}/objects/TurbidityTest/") || api.getAttribute("storage.googleapis.com/objectListPrefix", "").startsWith("TurbidityTest/")'
+EOF
 for SA in "$GEE_SA" "$INGEST_SA"; do
   gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
-    --member "serviceAccount:$SA" --role roles/storage.objectUser --condition "$COND"
+    --member "serviceAccount:$SA" --role roles/storage.objectUser \
+    --condition-from-file /tmp/turbidity-cond.yaml
 done
 ```
 
+To check whether the bucket uses uniform access, run
+`gcloud storage buckets describe "gs://$BUCKET" --format="value(uniform_bucket_level_access)"`.
 Without uniform access, conditions aren't available, so grant `roles/storage.objectUser`
-on the bucket without `--condition`.
+on the bucket without `--condition-from-file`.
 
 **Earth Engine:** nothing changes. The existing GEE service account is already registered and has
 Earth Engine access in the project. Only the way the jobs authenticate as it changes.
