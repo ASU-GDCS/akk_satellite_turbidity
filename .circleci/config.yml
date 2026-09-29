@@ -3,7 +3,7 @@ version: 2.1
 # One config file drives everything; the `run` pipeline parameter picks what runs.
 #
 #   checks       default, every push/PR   secret scan + tests (no context, no secrets)
-#   gee-monitor  schedule, Mondays        Earth Engine processing -> GCS vector/raster exports
+#   gee-monitor  schedule, daily          Earth Engine processing -> GCS vector/raster exports
 #   ingest       schedule, Wednesdays     prepare -> APPROVAL -> commit layer -> archive sources
 #   auth-check   manual                   verify keyless access to Earth Engine and the bucket
 #
@@ -189,12 +189,12 @@ workflows:
       - gee-monitor:
           name: gee-sentinel2
           satellite: sentinel2
-          nodes: 2
+          nodes: 1
           context: akk-turbidity
       - gee-monitor:
           name: gee-planet
           satellite: planet
-          nodes: 7
+          nodes: 2
           context: akk-turbidity
 
   ingest:

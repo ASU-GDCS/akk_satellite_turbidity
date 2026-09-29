@@ -3,9 +3,9 @@
 Satellite-detected turbidity event outlines along the West Hawaiʻi coast for the
 [Akoakoa](https://github.com/ASU-GDCS) geoportal.
 
-Every week:
+On a schedule:
 
-1. **Monday: `gee-monitor`.** Google Earth Engine compares new Landsat 8/9, Sentinel-2 and
+1. **Daily: `gee-monitor`.** Google Earth Engine compares new Landsat 8/9, Sentinel-2 and
    PlanetScope imagery with 2023 baselines, outlines likely turbidity events, and exports
    per-day vector and raster files to `gs://hawaii-bucket/TurbidityTest/`.
 2. **Wednesday: `ingest`.** The new vector files are collected, unioned per satellite and
@@ -20,8 +20,8 @@ lives in a restricted CircleCI context.
 
 ```mermaid
 flowchart LR
-  subgraph Mon["Monday · gee-monitor"]
-    L[landsat job] & S[sentinel2 job ×2] & P[planet job ×7]
+  subgraph Mon["Daily · gee-monitor"]
+    L[landsat job] & S[sentinel2 job] & P[planet job ×2]
   end
   P -- order --> PL[(Planet)] -- delivers --> EE[(Earth Engine)]
   L & S & P -- compute --> EE
@@ -49,7 +49,7 @@ flowchart LR
   - [3. CircleCI](#3-circleci)
   - [4. ArcGIS Online](#4-arcgis-online)
   - [5. Cut over from the old systemd service](#5-cut-over-from-the-old-systemd-service)
-- [Weekly operation](#weekly-operation)
+- [Routine operation](#routine-operation)
 - [Layer history](#layer-history)
 - [Common tasks](#common-tasks)
 - [Local development](#local-development)
@@ -60,10 +60,11 @@ flowchart LR
 
 ## How it works
 
-### `gee-monitor` (Mondays)
+### `gee-monitor` (daily)
 
 `akk-monitor --satellite <landsat|sentinel2|planet>` runs once per satellite as three
-CircleCI jobs. Each job uses `parallelism` to spread its days across several machines.
+CircleCI jobs. A normal run has one new day per satellite. After an outage there's a backlog,
+which `parallelism` spreads across machines (Planet uses 2).
 
 - **Which days get processed.** Each satellite processes every day in
   `[max(processed_through + 1, today − lookback_days), today − lag_days]` that has no
@@ -149,7 +150,7 @@ Everything the jobs need comes from the CircleCI context **`akk-turbidity`**:
 | `PLANET_API_KEY` | **yes** | Planet API key used to order daily PlanetScope scenes. |
 | `GCP_WIF_PROVIDER` | no | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/circleci/providers/circleci-akk` |
 | `CIRCLECI_OIDC_AUDIENCE` | no | Your CircleCI **organization ID**, used as the token audience. |
-| `GEE_SERVICE_ACCOUNT` | no | Service account the Monday jobs act as. It runs Earth Engine and writes exports and state markers. |
+| `GEE_SERVICE_ACCOUNT` | no | Service account the daily `gee-monitor` jobs act as. It runs Earth Engine and writes exports and state markers. |
 | `INGEST_SERVICE_ACCOUNT` | no | Service account the Wednesday jobs act as. It reads, writes and deletes under `TurbidityTest/` in the bucket. |
 
 The only other credential is the **GitHub deploy key** (write access to this repository
@@ -280,15 +281,17 @@ Earth Engine access in the project. Only the way the jobs authenticate as it cha
      leave it on, because the `checks` job uses no context.
    - Build logs and artifacts of a public project are public. Nothing in them is
      sensitive, and context values are masked in logs.
-6. **Schedules:** go to **Project Settings → Triggers** (or **Pipelines → Schedule
-   triggers**). Schedules are in UTC.
+6. **Schedules:** go to **Project Settings → Project Setup**. On the pipeline card, click
+   **Schedule +** once for each row below. Times are in UTC.
 
-   | Name | Timetable | Branch | Pipeline parameter |
-   |---|---|---|---|
-   | `gee-monitor-weekly` | Mondays 13:00 UTC (03:00 HST) | `main` | `run` = `gee-monitor` |
-   | `ingest-weekly` | Wednesdays 18:00 UTC (08:00 HST) | `main` | `run` = `ingest` |
+   | Name | Repeats | Time (UTC) | Branch | Pipeline parameter | Attribution |
+   |---|---|---|---|---|---|
+   | `gee-monitor-daily` | every day | 13:00 (03:00 HST) | `main` | `run` = `gee-monitor` | Scheduling system |
+   | `ingest-weekly` | Wednesday | 18:00 (08:00 HST) | `main` | `run` = `ingest` | Scheduling system |
 
-   Leave the push trigger in place. With no parameter it runs `checks`.
+   For the parameter, click **Add parameter** or **Populate from config**. The name is `run`,
+   the value is exactly `gee-monitor` or `ingest`, and without it the schedule would only run
+   `checks`. Leave the existing push trigger in place; with no parameter it runs `checks`.
 7. **Notifications:** in **User Settings → Notifications**, enable email for failed
    workflows and for workflows awaiting approval, if your plan offers it. CircleCI's
    failure emails replace the old `mail` alerts.
@@ -333,8 +336,8 @@ Do these steps in order so that no day is processed twice or skipped.
    - If any of those were deliberately left out of the layer before, add them to
      `config/exclusions.txt`, commit, and re-run the ingest.
    - Then approve.
-5. Point AGOL at the raw URL (step 4). Once a normal week has run, switch the repository
-   to public.
+5. Point AGOL at the raw URL (step 4). The repository is already public, which the raw URL
+   needs.
 6. Retire the old credentials. They're no longer needed, and some were exposed:
    ```bash
    gcloud iam service-accounts keys list --iam-account "$GEE_SA"
@@ -343,11 +346,11 @@ Do these steps in order so that no day is processed twice or skipped.
    ```
    Also rotate the Planet key if it was ever stored in the old repository.
 
-## Weekly operation
+## Routine operation
 
-**On Monday,** check that the `gee-monitor` workflow is green.
+**Each day,** `gee-monitor` runs on its own. You only hear about it when it fails.
 - The log ends with a per-day summary: `done`, `failed` or `deferred`.
-- `failed` and `deferred` days are retried next week automatically.
+- `failed` and `deferred` days are retried by the next day's run automatically.
 - A day that keeps failing for longer than `lookback_days` (30) is dropped from the
   schedule. Fix it and run it by hand (see [Common tasks](#common-tasks)).
 
