@@ -143,7 +143,8 @@ Nothing sensitive is committed. Every push runs [gitleaks](https://github.com/gi
 over the full history, using the default rules plus rules for Planet keys and
 base64/JSON service-account keys; see [`.gitleaks.toml`](.gitleaks.toml).
 
-Everything the jobs need comes from the CircleCI context **`akk-turbidity`**:
+Everything the jobs need comes from the CircleCI context **`akk-turbidity`**. Enter literal
+values: CircleCI does not expand `${VAR}` inside context values.
 
 | Variable | Secret? | What it is |
 |---|---|---|
@@ -447,6 +448,8 @@ Install the secret-scanning pre-commit hook: `uvx pre-commit install`.
 |---|---|
 | `invalid_target` / `The target service indicated by the "audience"…` | `GCP_WIF_PROVIDER` is wrong, or the pool or provider is disabled. |
 | `The given credential is rejected by the attribute condition` | The run isn't on `main`, or the project ID in the provider condition is wrong. |
+| `The issuer in ID Token https://oidc.circleci.com/org/<X> does not match the expected one` | The provider's issuer and audience must use the organization ID `<X>`. It's easy to swap the organization and project IDs. |
+| `Gaia id not found for email` | The service-account email in the context is wrong, for example it contains `${…}` literally, or the account doesn't exist. |
 | `Permission 'iam.serviceAccounts.getAccessToken' denied` | The `workloadIdentityUser` binding for that service account is missing (step 2). |
 | `No CircleCI OIDC token: the job must use a context` | The job lacks `context: akk-turbidity`, or the context restrictions blocked it. |
 | Earth Engine `not registered` / `permission denied` | The GEE service account lost Earth Engine access in `akoakoa-turbidity`. |
