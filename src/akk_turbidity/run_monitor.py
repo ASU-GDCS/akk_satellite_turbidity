@@ -56,6 +56,8 @@ def parse_args(argv):
                         help="override today's UTC date (testing)")
     parser.add_argument("--days", nargs="*", type=datetime.date.fromisoformat, default=None,
                         help="process exactly these days instead of the pending list (still skips days already marked done unless --force)")
+    parser.add_argument("--days-file", default=None,
+                        help="like --days, reading whitespace-separated YYYY-MM-DD dates from a file")
     parser.add_argument("--force", action="store_true", help="with --days: reprocess even if marked done")
     parser.add_argument("--node-index", type=int, default=int(os.environ.get("CIRCLE_NODE_INDEX", 0)))
     parser.add_argument("--node-total", type=int, default=int(os.environ.get("CIRCLE_NODE_TOTAL", 1)))
@@ -63,7 +65,13 @@ def parse_args(argv):
     parser.add_argument("--anonymous", action="store_true",
                         help="with --dry-run: read state markers anonymously (public bucket) instead of with credentials")
     parser.add_argument("--summary", default=None, help="write a JSON summary of this node's results here")
-    return parser.parse_args(argv)
+    parser.add_argument("--time-budget", type=float, default=None,
+                        help="minutes after which no new day is started (default from config; 0 = no limit)")
+    args = parser.parse_args(argv)
+    if args.days_file:
+        extra = [datetime.date.fromisoformat(x) for x in Path(args.days_file).read_text().split()]
+        args.days = (args.days or []) + extra
+    return args
 
 
 def main(argv=None):
@@ -94,12 +102,13 @@ def main(argv=None):
     if sat.name == "planet":
         cfgmod.require_env("PLANET_API_KEY")  # fail fast, before any day starts
 
-    budget = cfg.time_budget_minutes * 60
+    budget_min = cfg.time_budget_minutes if args.time_budget is None else args.time_budget
+    budget = budget_min * 60 if budget_min > 0 else float("inf")
     results = []
     for day in mine:
         elapsed = time.monotonic() - t_start
         if elapsed > budget:
-            print(f"\nTime budget ({cfg.time_budget_minutes:.0f} min) used; deferring {day} to the next run")
+            print(f"\nTime budget ({budget_min:.0f} min) used; deferring {day} to the next run")
             results.append({"date": day.isoformat(), "status": "deferred"})
             continue
 
