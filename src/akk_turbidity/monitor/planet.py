@@ -212,17 +212,21 @@ class PlanetTurbidity(TurbidityMonitor):
         return order_details
 
     def get_ImageCollections(self):
+        # Search window = the Hawaii calendar day (self.begin/self.end, UTC ms). Converting
+        # with an explicit UTC zone keeps it independent of the host's timezone; the old code
+        # used naive local time labelled "+00:00", which on an MST host shifted the window
+        # 7 h early, so each "day D" held imagery acquired on day D-1.
         
         self.planet = ee.ImageCollection(self.target)
         self.cleanup()
 
         order_details = asyncio.run(
             self.order_and_push(
-                order_name=f'{datetime.fromtimestamp(self.begin / 1000).isoformat()}+00:00', 
+                order_name=datetime.fromtimestamp(self.begin / 1000, tz=timezone.utc).isoformat(),
                 geojson_file=self.local_aoi_loc, 
                 PLANET_API_KEY=self.planet_api_key, 
-                t_start=f'{datetime.fromtimestamp(self.begin / 1000).isoformat()}+00:00', 
-                t_stop=f'{datetime.fromtimestamp(self.end / 1000).isoformat()}+00:00',
+                t_start=datetime.fromtimestamp(self.begin / 1000, tz=timezone.utc).isoformat(),
+                t_stop=datetime.fromtimestamp(self.end / 1000, tz=timezone.utc).isoformat(),
                 item_type='PSScene', 
                 cloud_cover=0.2,
                 use_asset_filter=True, 
