@@ -81,6 +81,9 @@ jobs:
     steps:
       - checkout
       - setup-env
+      - run:
+          name: OIDC token claims (compare with the GCP provider settings)
+          command: ci/oidc_claims.sh
       - gcp-login:
           service_account_env: GEE_SERVICE_ACCOUNT
       - run:

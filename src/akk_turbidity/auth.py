@@ -52,7 +52,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     cfg = cfgmod.load(args.config)
 
-    creds = get_credentials()
+    try:
+        creds = get_credentials()
+    except Exception as exc:
+        print(f"Could not get Google credentials: {exc}", file=sys.stderr)
+        print("Compare the 'OIDC token claims' step with the provider's issuer, allowed audience "
+              "and attribute condition; see README 'Troubleshooting'.", file=sys.stderr)
+        return 1
     ok = True
     if args.ee:
         import ee
