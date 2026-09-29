@@ -20,6 +20,9 @@ def index_join(collectionA, collectionB, property_name):
     return joined.map(merge_bands)
 
 
+SENSOR_ALIASES = {'Sentinel-2C': 'Sentinel-2A'}
+
+
 def compute_avw(image, sensor):
     """
     Compute apparent visible wavelength (AVW) for selected sensors following Vandermeulen (2022) [https://oceancolor.gsfc.nasa.gov/atbd/avw/]. 
@@ -29,7 +32,12 @@ def compute_avw(image, sensor):
     """
     # Define c and avw outside of if-clauses so they will be accessible later on
     c, avw = None, None
-    
+
+    # Sentinel-2C (operational 2025-01-21, replacing 2A) carries a copy of 2A's MSI and has
+    # no fitted coefficients here yet, so it uses 2A's. AVW is not used for the outlines
+    # (those come from B2-B4 only); it only affects the AVW band of the raster export.
+    sensor = SENSOR_ALIASES.get(sensor, sensor)
+
     # Compute avw depending on sensor
     if sensor == 'OLI':
         c = [-7.5487887E-09, 1.9136261E-05, -1.9333568E-02, 9.7261770E+00, -2.4338650E+03, 2.4247497E+05]
@@ -47,7 +55,9 @@ def compute_avw(image, sensor):
         c = [-3.1517567102E-10, 1.1191021004E-06, -1.4907044865E-03, 9.5281345072E-01, -2.9453261740E+02, 3.5790861208E+04]
         avw = image.select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6']).reduce(ee.Reducer.sum()) \
             .divide(image.select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6']).divide([444, 492, 533, 566, 612, 666]).reduce(ee.Reducer.sum()))
-        
+    else:
+        raise ValueError(f"No AVW coefficients for sensor {sensor!r}; add them to compute_avw()")
+
     # Compute hyperspectral AVW
     avw_cal = avw.expression('c[0]*(avw**5) + c[1]*(avw**4) + c[2]*(avw**3) + c[3]*(avw**2) + c[4]*(avw) + c[5]', {
         'c': c,
