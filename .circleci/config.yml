@@ -4,6 +4,7 @@ version: 2.1
 #
 #   checks       default, every push/PR   secret scan + tests (no context, no secrets)
 #   gee-monitor  schedule, daily          Earth Engine processing -> GCS vector/raster exports
+#                (add satellite=landsat|sentinel2|planet to run just one)
 #   ingest       schedule, Wednesdays     prepare -> APPROVAL -> commit layer -> archive sources
 #   auth-check   manual                   verify keyless access to Earth Engine and the bucket
 #
@@ -15,6 +16,11 @@ parameters:
     type: enum
     enum: [checks, gee-monitor, ingest, auth-check]
     default: checks
+  satellite:
+    # with run=gee-monitor: which satellite(s) to process (manual runs; schedules use all)
+    type: enum
+    enum: [all, landsat, sentinel2, planet]
+    default: all
 
 executors:
   python:
@@ -180,20 +186,43 @@ workflows:
       - auth-check:
           context: akk-turbidity
 
-  gee-monitor:
+  # One workflow per satellite so a single one can be run by hand (satellite=...).
+  gee-landsat:
     when:
-      equal: [gee-monitor, << pipeline.parameters.run >>]
+      and:
+        - equal: [gee-monitor, << pipeline.parameters.run >>]
+        - or:
+            - equal: [all, << pipeline.parameters.satellite >>]
+            - equal: [landsat, << pipeline.parameters.satellite >>]
     jobs:
       - gee-monitor:
           name: gee-landsat
           satellite: landsat
           nodes: 1
           context: akk-turbidity
+
+  gee-sentinel2:
+    when:
+      and:
+        - equal: [gee-monitor, << pipeline.parameters.run >>]
+        - or:
+            - equal: [all, << pipeline.parameters.satellite >>]
+            - equal: [sentinel2, << pipeline.parameters.satellite >>]
+    jobs:
       - gee-monitor:
           name: gee-sentinel2
           satellite: sentinel2
           nodes: 1
           context: akk-turbidity
+
+  gee-planet:
+    when:
+      and:
+        - equal: [gee-monitor, << pipeline.parameters.run >>]
+        - or:
+            - equal: [all, << pipeline.parameters.satellite >>]
+            - equal: [planet, << pipeline.parameters.satellite >>]
+    jobs:
       - gee-monitor:
           name: gee-planet
           satellite: planet

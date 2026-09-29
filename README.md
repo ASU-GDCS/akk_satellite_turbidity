@@ -389,6 +389,10 @@ an update added.
 
 ## Common tasks
 
+**Run one satellite by hand.** Trigger Pipeline on `main` with `run` = `gee-monitor` and
+`satellite` = `landsat`, `sentinel2` or `planet`. Don't start a satellite while its previous
+run is still going: two Planet jobs would order the same days.
+
 **Re-run a satellite day.** Delete its marker and trigger `gee-monitor`:
 
 ```bash
