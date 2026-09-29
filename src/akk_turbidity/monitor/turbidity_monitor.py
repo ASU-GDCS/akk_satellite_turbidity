@@ -63,24 +63,41 @@ class TurbidityMonitor(metaclass=ABCMeta):
     def get_vectors(self):
         pass
 
+    # Earth Engine runs only a couple of export tasks at a time per project, so a task
+    # can sit queued (READY) for a while when several jobs export at once.
+    export_queue_timeout_s = 1800
+    export_run_timeout_s = 2400
+
     def _wait_for_export(self, res, exp_type):
         time.sleep(10)
         t_0 = time.time()
         # wait for export and timeout
-        while( (time.time() - t_0 < 600) and (res.status()['state'] == "READY")):
+        while( (time.time() - t_0 < self.export_queue_timeout_s) and (res.status()['state'] == "READY")):
                 print(f"{self.name}(ready): {int(time.time() - t_0):04d}", end="\r")
                 time.sleep(10)
         t_0 = time.time()
-        while( (time.time() - t_0 < 2400) and (res.status()['state'] == "RUNNING")):
+        while( (time.time() - t_0 < self.export_run_timeout_s) and (res.status()['state'] == "RUNNING")):
                 print(f"{self.name}({exp_type}): {int(time.time() - t_0):04d}", end="\r")
                 sys.stdout.flush()
                 time.sleep(10)
         print()
 
-        if res.status()['state'] != "COMPLETED":
-            print(res.status())
+        # Read the status once, while Earth Engine is still initialised; reading it after
+        # ee.Reset() replaced the real reason with "client library not initialized".
+        status = res.status()
+        if status['state'] != "COMPLETED":
+            print(status)
+            if status['state'] in ("READY", "RUNNING"):
+                # Giving up: cancel, so the task can't write outputs later for a day that
+                # has no marker (and is then exported again on retry).
+                try:
+                    res.cancel()
+                except Exception as exc:
+                    print(f"Could not cancel {status.get('id')}: {exc}")
             ee.Reset()
-            raise ExportError(f'Failed to upload {exp_type} for {self.name} {self.date}. \n{res.status()}')
+            raise ExportError(f"Failed to export {exp_type} for {self.name} {self.date}: "
+                              f"task {status.get('id')} ended in state {status['state']} "
+                              f"{status.get('error_message', '')}".rstrip())
 
     def deliver_products(self):
         # Export failures used to be printed and ignored, which advanced the
