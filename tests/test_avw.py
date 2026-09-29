@@ -15,7 +15,7 @@ class FakeImage:
         return self
 
     def divide(self, x):
-        self.log.append(("divide", tuple(x) if isinstance(x, list) else x))
+        self.log.append(("divide", tuple(x) if isinstance(x, list) else "image"))
         return self
 
     def reduce(self, _):
