@@ -1,4 +1,3 @@
-import numpy as np
 import planet
 import ee
 
@@ -186,12 +185,10 @@ class PlanetTurbidity(TurbidityMonitor):
 
         # order_details = await self.process_order(auth, image_order)
 
-        try:
-            ee.data.deleteAsset(f"{self.assets_root}/{collection_name}")
-        except Exception as e:
-            print(e)
-    
-        ee.data.createAsset({'type': 'ImageCollection'}, path=f"{self.assets_root}/{collection_name}")
+        collection_path = f"{self.assets_root}/{collection_name}"
+        if ee.data.getInfo(collection_path) is not None:
+            ee.data.deleteAsset(collection_path)
+        ee.data.createAsset({'type': 'ImageCollection'}, path=collection_path)
 
         async  with planet.Session(auth=auth) as ps:
 
@@ -315,27 +312,15 @@ class PlanetTurbidity(TurbidityMonitor):
         # TODO: If asset exists AND not empty then skip
         # elif asset exists AND empty, delete asset then start order
         # else start order
-        if (self.planet):
-            # Re-initialize because Planet->GEE takes forever
-            self.init_ee()
+        # Re-initialize because Planet->GEE takes forever
+        self.init_ee()
 
-            n = None
-            try:
-                n = self.planet.size().getInfo()
+        # No collection yet is the normal case on a day's first run. getInfo returns None
+        # for it instead of raising, so any error from the deletes below is a real one.
+        if ee.data.getInfo(self.target) is None:
+            return
 
-                if n > 0:
-                    # Get list of images in collection
-                    image_list = self.planet.toList(n).getInfo()
-
-                    for i in np.arange(n):
-                        # Get image path
-                        image_path = image_list[i]['id']
-                        # Delete image from asset without confirmation
-                        ee.data.deleteAsset(image_path)
-            except Exception as e:
-                print(e)
-                
-            try:
-                ee.data.deleteAsset(self.planet.getInfo()['id'])
-            except Exception as e:
-                print(e)
+        # A collection must be empty before it can be deleted
+        for image in ee.data.listImages(self.target)['images']:
+            ee.data.deleteAsset(image['name'])
+        ee.data.deleteAsset(self.target)
