@@ -82,7 +82,10 @@ which `parallelism` spreads across machines (Planet uses 2).
   recorded as done with 0 images. The old code placed an empty order, got
   `ItemIDs is empty`, and stalled. Otherwise an order is placed and delivered straight
   into the Earth Engine collection `imagery/planet/daily_test_17May/<date>`, processed,
-  and cleaned up.
+  and cleaned up. Delivery usually takes 15–25 min but can take an hour. The job waits up
+  to 35 min, printing the order state each minute. After that the day is `deferred`. The
+  order keeps running, and the next run picks up that same order instead of ordering
+  the scenes again.
 - **Export failures.** A failed export fails the day, and the day is retried. The old
   code printed export failures and marked the day as done anyway.
 

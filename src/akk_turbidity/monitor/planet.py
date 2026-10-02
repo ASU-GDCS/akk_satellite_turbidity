@@ -2,7 +2,7 @@ import planet
 import ee
 
 from . import utils
-from .turbidity_monitor import TurbidityMonitor
+from .turbidity_monitor import DayDeferred, TurbidityMonitor
 
 import asyncio
 from datetime import datetime, timezone
@@ -13,7 +13,16 @@ import requests
 from requests.auth import HTTPBasicAuth
 import time
 
+# Order states before a final one (success, partial, failed, cancelled)
+ORDER_IN_FLIGHT = ('queued', 'running')
+
 class PlanetTurbidity(TurbidityMonitor):
+    # Planet->GEE delivery usually takes 15-25 min but can take an hour. The wait is capped
+    # so the CircleCI job (60 min max) isn't killed mid-wait; an order still in flight is
+    # left running and picked up by the next run instead of being ordered again.
+    order_timeout_s = 2100
+    order_poll_s = 60
+
     def __init__(self, 
                  credentials = None,
                  project: str = None,
@@ -130,6 +139,20 @@ class PlanetTurbidity(TurbidityMonitor):
             order_name = self.date
         print(f'Order name: {order_name}')
 
+        # A previous run may have placed this day's order and been stopped before Planet
+        # delivered it. Wait on that order instead: ordering again would delete what it has
+        # already delivered and pay for the same scenes twice.
+        async with planet.Session(auth=auth) as ps:
+            client = ps.client('orders')
+            previous = await self.previous_order(client, order_name, collection_name)
+            if previous is not None:
+                print(f"Resuming order {previous['id']} ({previous['state']}, placed {previous['created_on']})")
+                order_details = await self.wait_for_order(client, previous['id'])
+                pprint(order_details)
+                return order_details
+
+        self.cleanup()
+
         if not os.path.exists(geojson_file):
             raise RuntimeError(f"Could not find file {geojson_file}")
         else:
@@ -194,28 +217,50 @@ class PlanetTurbidity(TurbidityMonitor):
 
             client = ps.client('orders')
 
-            with planet.reporting.StateBar(state='creating') as reporter:
-                # Place an order to the Orders API
-                order = await client.create_order(image_order)
-                reporter.update(state='created', order_id=order['id'])
-                # Wait while the order is being completed
-                await client.wait(order['id'],
-                                callback=reporter.update_state,
-                                max_attempts=0)
-            # Grab the details of the orders
-            order_details = await client.get_order(order_id=order['id'])
+            order = await client.create_order(image_order)
+            print(f"Placed order {order['id']}", flush=True)
+            order_details = await self.wait_for_order(client, order['id'])
 
         pprint(order_details)
         return order_details
+
+    async def previous_order(self, client, order_name, collection_name):
+        """This day's newest order if it can still be used: in flight, or finished with its
+        images still in the day collection. None means a new order is needed."""
+        async for order in client.list_orders(name=order_name, limit=20):
+            gee = order.get('delivery', {}).get('google_earth_engine')
+            if gee and gee.get('collection') != collection_name:
+                continue  # same name, delivered somewhere else (e.g. a manual order)
+            if order['state'] in ('failed', 'cancelled') or ee.data.getInfo(self.target) is None:
+                return None
+            if order['state'] not in ORDER_IN_FLIGHT and not ee.data.listImages(self.target)['images']:
+                return None  # its images were since deleted (e.g. reprocessing a finished day)
+            return order
+        return None
+
+    async def wait_for_order(self, client, order_id):
+        """Poll until the order reaches a final state and return its details. The state is
+        printed every poll: a silent wait gets the CircleCI step killed after 30 min."""
+        t_0 = time.monotonic()
+        while True:
+            order = await client.get_order(order_id)
+            waited = time.monotonic() - t_0
+            print(f"order {order_id}: {order['state']} ({waited / 60:.0f} min)", flush=True)
+            if order['state'] not in ORDER_IN_FLIGHT:
+                return order
+            if waited >= self.order_timeout_s:
+                # Leave the order running; the next run finds it with previous_order
+                raise DayDeferred(f"Planet order {order_id} still {order['state']} after "
+                                  f"{waited / 60:.0f} min; the next run picks it up")
+            await asyncio.sleep(self.order_poll_s)
 
     def get_ImageCollections(self):
         # Search window = the Hawaii calendar day (self.begin/self.end, UTC ms). Converting
         # with an explicit UTC zone keeps it independent of the host's timezone; the old code
         # used naive local time labelled "+00:00", which on an MST host shifted the window
         # 7 h early, so each "day D" held imagery acquired on day D-1.
-        
+
         self.planet = ee.ImageCollection(self.target)
-        self.cleanup()
 
         order_details = asyncio.run(
             self.order_and_push(
@@ -309,9 +354,6 @@ class PlanetTurbidity(TurbidityMonitor):
 
     def cleanup(self):
 
-        # TODO: If asset exists AND not empty then skip
-        # elif asset exists AND empty, delete asset then start order
-        # else start order
         # Re-initialize because Planet->GEE takes forever
         self.init_ee()
 

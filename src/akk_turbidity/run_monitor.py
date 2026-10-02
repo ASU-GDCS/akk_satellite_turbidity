@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import auth, state
 from . import config as cfgmod
+from .monitor.turbidity_monitor import DayDeferred
 
 
 def make_processor(sat, day, cfg, credentials):
@@ -122,6 +123,9 @@ def main(argv=None):
             results.append({"date": day.isoformat(), "status": "done", "n_images": n_images,
                             "seconds": round(seconds)})
             print(f"{sat.name} {day}: done ({n_images} image(s), {seconds / 60:.1f} min)")
+        except DayDeferred as exc:
+            results.append({"date": day.isoformat(), "status": "deferred", "reason": str(exc)[:500]})
+            print(f"{sat.name} {day}: deferred to the next run: {exc}")
         except Exception as exc:
             traceback.print_exc()
             results.append({"date": day.isoformat(), "status": "failed", "error": str(exc)[:500]})

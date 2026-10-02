@@ -117,7 +117,7 @@ jobs:
           service_account_env: GEE_SERVICE_ACCOUNT
       - run:
           name: Process pending << parameters.satellite >> days (this node's share)
-          # Planet orders can sit silently while Planet delivers to Earth Engine
+          # Planet order waits print the order state every minute; this only catches hangs
           no_output_timeout: 30m
           command: uv run akk-monitor --satellite << parameters.satellite >>
 

@@ -10,6 +10,11 @@ class ExportError(RuntimeError):
     pass
 
 
+class DayDeferred(Exception):
+    """The day isn't finished but nothing failed (e.g. a Planet order still being
+    delivered); it stays unmarked and the next run continues it."""
+
+
 class TurbidityMonitor(metaclass=ABCMeta):
     date: str       = None
     begin: str      = None
