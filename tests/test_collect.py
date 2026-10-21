@@ -4,10 +4,10 @@ from conftest import gee_export, square
 
 
 def test_parse_vector_name():
-    p = "TurbidityTest/landsat/"
+    p = "landsat/"
     assert collect.parse_vector_name(p + "2026/vector/2026-01-28.geojson", p) == "2026-01-28"
     assert collect.parse_vector_name(p + "2026/raster/2026-01-28_0.tif", p) is None
-    assert collect.parse_vector_name("TurbidityTest/planet/2026/vector/2026-01-28.geojson", p) is None
+    assert collect.parse_vector_name("planet/2026/vector/2026-01-28.geojson", p) is None
     assert collect.parse_vector_name(p + "2026/vector/2026-02-30.geojson", p) is None
     assert collect.parse_vector_name(p + "2026/vector/notes.txt", p) is None
 

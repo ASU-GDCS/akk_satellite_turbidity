@@ -9,13 +9,14 @@ aoi = "projects/akoakoa-turbidity/assets/aoi/akoakoa_turbidity_roi"
 depth = "projects/akoakoa-turbidity/assets/blended_depth_3m"
 
 [gcs]
-# Bucket in the Earth Engine project (akoakoa-turbidity). Replaced hawaii-bucket
-# (project HawaiiCoralMapsProject) on 2026-10-21; TurbidityTest/ was copied across.
+# Bucket in the Earth Engine project (akoakoa-turbidity). Replaced
+# gs://hawaii-bucket/TurbidityTest/ (project HawaiiCoralMapsProject) on 2026-10-21;
+# that folder's contents now sit at this bucket's root.
 bucket = "akoakoa-turbidity"
 # Per-day "done" markers written by the monitor: <state_prefix>/<satellite>/<YYYY-MM-DD>.json
-state_prefix = "TurbidityTest/state"
+state_prefix = "state"
 # Ingested vector GeoJSONs are gzipped into <archive_prefix>/<satellite>/<YYYY>/vector/
-archive_prefix = "TurbidityTest/archive"
+archive_prefix = "archive"
 
 [monitor]
 # Only days newer than max(processed_through, today - lookback_days) are considered.
@@ -32,21 +33,21 @@ time_budget_minutes = 40
 
 [satellites.landsat]
 label = "Landsat"
-prefix = "TurbidityTest/landsat/"
+prefix = "landsat/"
 baselines = "projects/akoakoa-turbidity/assets/imagery/landsat/baselines"
 lag_days = 8
 processed_through = "2026-09-20"
 
 [satellites.sentinel2]
 label = "Sentinel2"
-prefix = "TurbidityTest/sentinel2/"
+prefix = "sentinel2/"
 baselines = "projects/akoakoa-turbidity/assets/imagery/sentinel-2/baselines"
 lag_days = 5
 processed_through = "2026-09-23"
 
 [satellites.planet]
 label = "PlanetScope"
-prefix = "TurbidityTest/planet/"
+prefix = "planet/"
 baselines = "projects/akoakoa-turbidity/assets/imagery/planet/2023_baseline"
 # Planet orders are delivered straight into this GEE collection (under assets_root), one per day.
 daily_collection = "imagery/planet/daily_test_17May"

@@ -7,7 +7,7 @@ On a schedule:
 
 1. **Daily: `gee-monitor`.** Google Earth Engine compares new Landsat 8/9, Sentinel-2 and
    PlanetScope imagery with 2023 baselines, outlines likely turbidity events, and exports
-   per-day vector and raster files to `gs://akoakoa-turbidity/TurbidityTest/`.
+   per-day vector and raster files to `gs://akoakoa-turbidity/<satellite>/<YYYY>/`.
 2. **Wednesday: `ingest`.** The new vector files are collected, unioned per satellite and
    date, and filtered by size. You review them on a map, and after you approve they're
    appended to [`data/turbidity_outlines.geojson`](data/turbidity_outlines.geojson). ArcGIS
@@ -25,7 +25,7 @@ flowchart LR
   end
   P -- order --> PL[(Planet)] -- delivers --> EE[(Earth Engine)]
   L & S & P -- compute --> EE
-  EE -- export vector/raster --> B[(gs://akoakoa-turbidity<br/>TurbidityTest/…)]
+  EE -- export vector/raster --> B[(gs://akoakoa-turbidity<br/>landsat/ sentinel2/ planet/)]
   L & S & P -- per-day marker --> ST[(…/state/)]
   subgraph Wed["Wednesday · ingest"]
     PR[prepare-outlines] --> H{{hold-for-review<br/>approval}} --> PU[publish-outlines] --> AR[archive-ingested]
@@ -69,7 +69,7 @@ which `parallelism` spreads across machines (Planet uses 2).
 - **Which days get processed.** Each satellite processes every day in
   `[max(processed_through + 1, today − lookback_days), today − lag_days]` that has no
   **state marker**. A marker is the object
-  `gs://akoakoa-turbidity/TurbidityTest/state/<satellite>/<YYYY-MM-DD>.json`. It's written
+  `gs://akoakoa-turbidity/state/<satellite>/<YYYY-MM-DD>.json`. It's written
   when a day finishes, including days with no imagery. A failed or timed-out day has no
   marker, so the next run retries it automatically. The lags are 8 days for Landsat,
   5 for Sentinel-2 and 1 for Planet, matching when imagery becomes available. All of
@@ -92,7 +92,7 @@ which `parallelism` spreads across machines (Planet uses 2).
 ### `ingest` (Wednesdays)
 
 1. **`prepare-outlines`**
-   - Lists every `TurbidityTest/<sat>/<YYYY>/vector/<date>.geojson` that is still in
+   - Lists every `<sat>/<YYYY>/vector/<date>.geojson` that is still in
      place. Ingested files get archived, so anything still there hasn't been ingested.
    - Converts them to the published schema (`Satelite, ID, Date, PixelCount, Area_ha`)
      and unions outlines per satellite and date, using the same logic and filters as the
@@ -106,7 +106,7 @@ which `parallelism` spreads across machines (Planet uses 2).
    It refuses if the layer changed since `prepare`.
 4. **`archive-ingested`** handles each file in the manifest:
    1. Downloads the reviewed generation and checks its MD5.
-   2. Writes `TurbidityTest/archive/<sat>/<YYYY>/vector/<date>.geojson.gz`. It never
+   2. Writes `archive/<sat>/<YYYY>/vector/<date>.geojson.gz`. It never
       overwrites an existing archive object.
    3. Reads that copy back, decompresses it and compares the MD5.
    4. Only then deletes the original, and only if it is still the same generation.
@@ -155,7 +155,7 @@ values: CircleCI does not expand `${VAR}` inside context values.
 | `GCP_WIF_PROVIDER` | no | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/circleci/providers/circleci-akk` |
 | `CIRCLECI_OIDC_AUDIENCE` | no | Your CircleCI **organization ID**, used as the token audience. |
 | `GEE_SERVICE_ACCOUNT` | no | Service account the daily `gee-monitor` jobs act as. It runs Earth Engine and writes exports and state markers. |
-| `INGEST_SERVICE_ACCOUNT` | no | Service account the Wednesday jobs act as. It reads, writes and deletes under `TurbidityTest/` in the bucket. |
+| `INGEST_SERVICE_ACCOUNT` | no | Service account the Wednesday jobs act as. It reads, writes and deletes objects in the bucket. |
 
 The only other credential is the **GitHub deploy key** (write access to this repository
 only). Its private half is stored in CircleCI's project SSH keys.
@@ -235,8 +235,8 @@ done
 
 **Bucket.** Exports, state markers and archives live in `gs://akoakoa-turbidity`, a bucket
 in this same project (us-central1, uniform bucket-level access, not public). It replaced
-`gs://hawaii-bucket` in project HawaiiCoralMapsProject on 2026-10-21, when `TurbidityTest/`
-was copied across. Both service accounts need object read, write, list and delete on it,
+`gs://hawaii-bucket/TurbidityTest/` in project HawaiiCoralMapsProject on 2026-10-21; that
+folder's contents were copied to this bucket's root. Both service accounts need object read, write, list and delete on it,
 which `roles/storage.objectUser` grants. To recreate the bucket and the grants:
 
 ```bash
@@ -324,7 +324,7 @@ Do these steps in order so that no day is processed twice or skipped.
    `processed_through` in `config/pipeline.toml`, then commit. Nothing on or before
    those dates is reprocessed.
 3. Run `auth-check`, then trigger `run` = `gee-monitor` by hand. Check that the day
-   markers appear under `TurbidityTest/state/`.
+   markers appear under `state/`.
 4. Trigger `run` = `ingest` by hand and review the first update.
    - It lists every vector file ever exported. Files already in the layer show as
      `duplicate` and are only archived.
@@ -391,7 +391,7 @@ run is still going: two Planet jobs would order the same days.
 **Re-run a satellite day.** Delete its marker and trigger `gee-monitor`:
 
 ```bash
-gcloud storage rm gs://akoakoa-turbidity/TurbidityTest/state/sentinel2/2026-10-01.json
+gcloud storage rm gs://akoakoa-turbidity/state/sentinel2/2026-10-01.json
 ```
 
 If that satellite/date is already in the layer, first remove its features from
@@ -401,7 +401,7 @@ export as a duplicate.
 **Restore an archived export:**
 
 ```bash
-gcloud storage cat gs://akoakoa-turbidity/TurbidityTest/archive/planet/2026/vector/2026-09-22.geojson.gz | gunzip > 2026-09-22.geojson
+gcloud storage cat gs://akoakoa-turbidity/archive/planet/2026/vector/2026-09-22.geojson.gz | gunzip > 2026-09-22.geojson
 ```
 
 Each archive object keeps the original name, generation and MD5 in its metadata.

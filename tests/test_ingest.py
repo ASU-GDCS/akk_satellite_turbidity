@@ -65,12 +65,12 @@ def test_prepare_apply_archive_end_to_end(repo, monkeypatch):
     client = FakeClient()
     old = gee_export([(square(-155.84, 19.97, 0.002), 22, 19830.4)])
     new = gee_export([(square(-155.9, 19.8, 0.01), 500, 90000.0)])
-    put(client, "TurbidityTest/landsat/2026/vector/2026-01-28.geojson", old)      # already published
-    put(client, "TurbidityTest/sentinel2/2026/vector/2026-02-01.geojson", new)    # late arrival -> backfill
-    put(client, "TurbidityTest/sentinel2/2026/vector/2026-02-02.geojson",
+    put(client, "landsat/2026/vector/2026-01-28.geojson", old)      # already published
+    put(client, "sentinel2/2026/vector/2026-02-01.geojson", new)    # late arrival -> backfill
+    put(client, "sentinel2/2026/vector/2026-02-02.geojson",
         b'{"type":"FeatureCollection","features":[]}')
-    put(client, "TurbidityTest/sentinel2/2026/raster/2026-02-01_0.tif", b"tif")   # never touched
-    put(client, "TurbidityTest/archive/landsat/2025/vector/2025-12-01.geojson.gz", b"x")  # not re-listed
+    put(client, "sentinel2/2026/raster/2026-02-01_0.tif", b"tif")   # never touched
+    put(client, "archive/landsat/2025/vector/2025-12-01.geojson.gz", b"x")  # not re-listed
 
     out = repo / "build" / "ingest"
     manifest = prepare.prepare(cfg, client, out, log=lambda *a: None)
@@ -98,9 +98,9 @@ def test_prepare_apply_archive_end_to_end(repo, monkeypatch):
     results, failures = archive.archive_manifest(cfg, client, manifest, log=lambda *a: None)
     assert failures == [] and results == {"archived": 3}
     names = set(client.store.objects)
-    assert "TurbidityTest/sentinel2/2026/raster/2026-02-01_0.tif" in names
-    assert not any("/vector/" in n and not n.startswith("TurbidityTest/archive/") for n in names)
-    arc = client.store.objects["TurbidityTest/archive/sentinel2/2026/vector/2026-02-01.geojson.gz"]
+    assert "sentinel2/2026/raster/2026-02-01_0.tif" in names
+    assert not any("/vector/" in n and not n.startswith("archive/") for n in names)
+    arc = client.store.objects["archive/sentinel2/2026/vector/2026-02-01.geojson.gz"]
     assert gzip.decompress(arc["data"]) == new
     assert arc["metadata"]["source_md5"] == md5(new) and arc["content_type"] == "application/gzip"
 
@@ -123,17 +123,17 @@ def _one(cfg, client, name, data):
 def test_archive_refuses_changed_content(repo):
     cfg = setup_repo(repo, [])
     client = FakeClient()
-    vec = _one(cfg, client, "TurbidityTest/landsat/2026/vector/2026-03-01.geojson", b"reviewed")
+    vec = _one(cfg, client, "landsat/2026/vector/2026-03-01.geojson", b"reviewed")
     vec.md5_hash = md5(b"something else")
     with pytest.raises(RuntimeError, match="changed since review"):
         archive.archive_one(cfg, client.bucket(BUCKET), vec, log=lambda *a: None)
-    assert "TurbidityTest/landsat/2026/vector/2026-03-01.geojson" in client.store.objects
+    assert "landsat/2026/vector/2026-03-01.geojson" in client.store.objects
 
 
 def test_archive_skips_when_reviewed_generation_was_replaced(repo):
     cfg = setup_repo(repo, [])
     client = FakeClient()
-    name = "TurbidityTest/landsat/2026/vector/2026-03-01.geojson"
+    name = "landsat/2026/vector/2026-03-01.geojson"
     vec = _one(cfg, client, name, b"reviewed")
     # the reviewed generation is replaced by a re-export before archiving runs
     client.store.put(name, b"re-exported")
@@ -146,13 +146,13 @@ def test_archive_skips_when_reviewed_generation_was_replaced(repo):
 def test_archive_does_not_overwrite_different_archive(repo):
     cfg = setup_repo(repo, [])
     client = FakeClient()
-    name = "TurbidityTest/landsat/2026/vector/2026-03-01.geojson"
-    client.store.put("TurbidityTest/archive/landsat/2026/vector/2026-03-01.geojson.gz", gzip.compress(b"older run"))
+    name = "landsat/2026/vector/2026-03-01.geojson"
+    client.store.put("archive/landsat/2026/vector/2026-03-01.geojson.gz", gzip.compress(b"older run"))
     vec = _one(cfg, client, name, b"reviewed")
     assert archive.archive_one(cfg, client.bucket(BUCKET), vec, log=lambda *a: None) == "archived"
     assert gzip.decompress(client.store.objects[
-        "TurbidityTest/archive/landsat/2026/vector/2026-03-01.geojson.gz"]["data"]) == b"older run"
-    alt = f"TurbidityTest/archive/landsat/2026/vector/2026-03-01.geojson.gen{vec.generation}.gz"
+        "archive/landsat/2026/vector/2026-03-01.geojson.gz"]["data"]) == b"older run"
+    alt = f"archive/landsat/2026/vector/2026-03-01.geojson.gen{vec.generation}.gz"
     assert gzip.decompress(client.store.objects[alt]["data"]) == b"reviewed"
     assert name not in client.store.objects
 
@@ -160,7 +160,7 @@ def test_archive_does_not_overwrite_different_archive(repo):
 def test_archive_keeps_original_if_verification_fails(repo, monkeypatch):
     cfg = setup_repo(repo, [])
     client = FakeClient()
-    name = "TurbidityTest/landsat/2026/vector/2026-03-01.geojson"
+    name = "landsat/2026/vector/2026-03-01.geojson"
     vec = _one(cfg, client, name, b"reviewed")
     monkeypatch.setattr(archive, "_verified_copy", lambda *a: False)
     with pytest.raises(RuntimeError, match="failed verification"):
