@@ -7,7 +7,7 @@ On a schedule:
 
 1. **Daily: `gee-monitor`.** Google Earth Engine compares new Landsat 8/9, Sentinel-2 and
    PlanetScope imagery with 2023 baselines, outlines likely turbidity events, and exports
-   per-day vector and raster files to `gs://hawaii-bucket/TurbidityTest/`.
+   per-day vector and raster files to `gs://akoakoa-turbidity/TurbidityTest/`.
 2. **Wednesday: `ingest`.** The new vector files are collected, unioned per satellite and
    date, and filtered by size. You review them on a map, and after you approve they're
    appended to [`data/turbidity_outlines.geojson`](data/turbidity_outlines.geojson). ArcGIS
@@ -25,7 +25,7 @@ flowchart LR
   end
   P -- order --> PL[(Planet)] -- delivers --> EE[(Earth Engine)]
   L & S & P -- compute --> EE
-  EE -- export vector/raster --> B[(gs://hawaii-bucket<br/>TurbidityTest/…)]
+  EE -- export vector/raster --> B[(gs://akoakoa-turbidity<br/>TurbidityTest/…)]
   L & S & P -- per-day marker --> ST[(…/state/)]
   subgraph Wed["Wednesday · ingest"]
     PR[prepare-outlines] --> H{{hold-for-review<br/>approval}} --> PU[publish-outlines] --> AR[archive-ingested]
@@ -69,7 +69,7 @@ which `parallelism` spreads across machines (Planet uses 2).
 - **Which days get processed.** Each satellite processes every day in
   `[max(processed_through + 1, today − lookback_days), today − lag_days]` that has no
   **state marker**. A marker is the object
-  `gs://hawaii-bucket/TurbidityTest/state/<satellite>/<YYYY-MM-DD>.json`. It's written
+  `gs://akoakoa-turbidity/TurbidityTest/state/<satellite>/<YYYY-MM-DD>.json`. It's written
   when a day finishes, including days with no imagery. A failed or timed-out day has no
   marker, so the next run retries it automatically. The lags are 8 days for Landsat,
   5 for Sentinel-2 and 1 for Planet, matching when imagery becomes available. All of
@@ -205,7 +205,7 @@ POOL=circleci
 PROVIDER=circleci-akk
 GEE_SA=akoakoa-turbidity@${PROJECT_ID}.iam.gserviceaccount.com   # existing Earth Engine service account
 INGEST_SA=turbidity-ingest@${PROJECT_ID}.iam.gserviceaccount.com
-BUCKET=hawaii-bucket
+BUCKET=akoakoa-turbidity                                                 # bucket in this same project
 
 gcloud services enable iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com \
   --project "$PROJECT_ID"
@@ -233,31 +233,23 @@ for SA in "$GEE_SA" "$INGEST_SA"; do
 done
 ```
 
-**Bucket access.** This is done by whoever administers `hawaii-bucket`, which may be in
-a different project. Both service accounts need object read, write and delete under
-`TurbidityTest/`. The GEE account already writes the exports; it now also writes the
-state markers.
-
-If the bucket uses uniform bucket-level access, limit the grant to the prefix:
+**Bucket.** Exports, state markers and archives live in `gs://akoakoa-turbidity`, a bucket
+in this same project (us-central1, uniform bucket-level access, not public). It replaced
+`gs://hawaii-bucket` in project HawaiiCoralMapsProject on 2026-10-21, when `TurbidityTest/`
+was copied across. Both service accounts need object read, write, list and delete on it,
+which `roles/storage.objectUser` grants. To recreate the bucket and the grants:
 
 ```bash
-# --condition splits on commas, so the expression goes in a file
-cat > /tmp/turbidity-cond.yaml <<EOF
-title: TurbidityTest-only
-description: Only objects under TurbidityTest/
-expression: 'resource.name.startsWith("projects/_/buckets/${BUCKET}/objects/TurbidityTest/") || api.getAttribute("storage.googleapis.com/objectListPrefix", "").startsWith("TurbidityTest/")'
-EOF
+gcloud storage buckets create "gs://$BUCKET" --project "$PROJECT_ID" \
+  --location us-central1 --uniform-bucket-level-access
 for SA in "$GEE_SA" "$INGEST_SA"; do
   gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
-    --member "serviceAccount:$SA" --role roles/storage.objectUser \
-    --condition-from-file /tmp/turbidity-cond.yaml
+    --member "serviceAccount:$SA" --role roles/storage.objectUser
 done
 ```
 
-To check whether the bucket uses uniform access, run
-`gcloud storage buckets describe "gs://$BUCKET" --format="value(uniform_bucket_level_access)"`.
-Without uniform access, conditions aren't available, so grant `roles/storage.objectUser`
-on the bucket without `--condition-from-file`.
+Project owners can read and write the bucket with their own Google account, so local
+read-only runs need no impersonation (see [Local development](#local-development)).
 
 **Earth Engine:** nothing changes. The existing GEE service account is already registered and has
 Earth Engine access in the project. Only the way the jobs authenticate as it changes.
@@ -399,7 +391,7 @@ run is still going: two Planet jobs would order the same days.
 **Re-run a satellite day.** Delete its marker and trigger `gee-monitor`:
 
 ```bash
-gcloud storage rm gs://hawaii-bucket/TurbidityTest/state/sentinel2/2026-10-01.json
+gcloud storage rm gs://akoakoa-turbidity/TurbidityTest/state/sentinel2/2026-10-01.json
 ```
 
 If that satellite/date is already in the layer, first remove its features from
@@ -409,7 +401,7 @@ export as a duplicate.
 **Restore an archived export:**
 
 ```bash
-gcloud storage cat gs://hawaii-bucket/TurbidityTest/archive/planet/2026/vector/2026-09-22.geojson.gz | gunzip > 2026-09-22.geojson
+gcloud storage cat gs://akoakoa-turbidity/TurbidityTest/archive/planet/2026/vector/2026-09-22.geojson.gz | gunzip > 2026-09-22.geojson
 ```
 
 Each archive object keeps the original name, generation and MD5 in its metadata.
@@ -428,13 +420,19 @@ You need [uv](https://docs.astral.sh/uv/). There's no conda environment any more
 uv sync                       # creates .venv from uv.lock (Python 3.12)
 uv run pytest                 # offline tests
 
-# See what the monitor would do. Reads the public bucket anonymously; no credentials needed.
-uv run akk-monitor --satellite planet --dry-run --anonymous
+# Read-only runs use your own Google account (project owners can read the bucket).
+gcloud auth application-default login
 
-# Build a review locally from the live bucket (read-only, anonymous)
-uv run akk-ingest prepare --anonymous --out build/ingest
+# See what the monitor would do.
+uv run akk-monitor --satellite planet --dry-run
+
+# Build a review locally from the live bucket (read-only).
+uv run akk-ingest prepare --out build/ingest
 xdg-open build/ingest/review/map.html
 ```
+
+The `--anonymous` flag of those two commands only works against a public bucket;
+`gs://akoakoa-turbidity` is private, so leave it off.
 
 For anything that talks to Earth Engine or writes to the bucket, impersonate the service
 account through Application Default Credentials. Your Google account needs

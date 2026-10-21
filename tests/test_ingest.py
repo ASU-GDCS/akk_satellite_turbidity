@@ -8,7 +8,7 @@ from akk_turbidity.ingest import archive, cli, collect, layer, prepare
 
 from conftest import FakeClient, gee_export, layer_feature, md5, square
 
-BUCKET = "hawaii-bucket"
+BUCKET = "akoakoa-turbidity"
 
 
 def setup_repo(repo, existing):

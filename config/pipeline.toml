@@ -9,7 +9,9 @@ aoi = "projects/akoakoa-turbidity/assets/aoi/akoakoa_turbidity_roi"
 depth = "projects/akoakoa-turbidity/assets/blended_depth_3m"
 
 [gcs]
-bucket = "hawaii-bucket"
+# Bucket in the Earth Engine project (akoakoa-turbidity). Replaced hawaii-bucket
+# (project HawaiiCoralMapsProject) on 2026-10-21; TurbidityTest/ was copied across.
+bucket = "akoakoa-turbidity"
 # Per-day "done" markers written by the monitor: <state_prefix>/<satellite>/<YYYY-MM-DD>.json
 state_prefix = "TurbidityTest/state"
 # Ingested vector GeoJSONs are gzipped into <archive_prefix>/<satellite>/<YYYY>/vector/
